@@ -1,7 +1,7 @@
 from math import floor
 
 from vnpy.trader.constant import Direction, Interval
-from vnpy.trader.object import BarData, TickData, TradeData
+from vnpy.trader.object import BarData, TickData
 from vnpy.trader.utility import ArrayManager
 
 from vnpy_portfoliostrategy import StrategyEngine, StrategyTemplate
@@ -43,7 +43,6 @@ class EtfMomentumRotationV2Strategy(StrategyTemplate):
     price_add = 0.01
 
     rebalance_count = 0
-    cash = 0.0
     portfolio_value = 0.0
     selected_symbols: list[str] = []
     defensive_symbols: list[str] = []
@@ -65,7 +64,6 @@ class EtfMomentumRotationV2Strategy(StrategyTemplate):
     ]
     variables = [
         "rebalance_count",
-        "cash",
         "portfolio_value",
         "selected_symbols",
         "defensive_symbols",
@@ -93,7 +91,6 @@ class EtfMomentumRotationV2Strategy(StrategyTemplate):
             vt_symbol for vt_symbol in self.EQUITY_SYMBOLS if vt_symbol in self.vt_symbols
         ]
 
-        self.cash = float(self.initial_capital)
         self.portfolio_value = float(self.initial_capital)
         self.selected_symbols = []
         self.defensive_symbols = []
@@ -139,22 +136,12 @@ class EtfMomentumRotationV2Strategy(StrategyTemplate):
         self.rebalance_portfolio(bars)
         self.put_event()
 
-    def update_trade(self, trade: TradeData) -> None:
-        """成交数据更新"""
-        super().update_trade(trade)
-
-        trade_value: float = trade.price * trade.volume
-        if trade.direction == Direction.LONG:
-            self.cash -= trade_value
-        else:
-            self.cash += trade_value
-
     def update_targets(self) -> None:
         """计算动量排名并按组合权益更新50:50目标持仓"""
         for vt_symbol in self.vt_symbols:
             self.set_target(vt_symbol, 0)
 
-        self.portfolio_value = self.calculate_portfolio_value()
+        self.portfolio_value = self.get_portfolio_value()
         slot_value: float = self.portfolio_value / self.SLOT_COUNT
 
         self.momentum_scores = self.calculate_equity_scores()
@@ -184,19 +171,6 @@ class EtfMomentumRotationV2Strategy(StrategyTemplate):
         for vt_symbol, bar in bars.items():
             if bar.close_price > 0:
                 self.last_prices[vt_symbol] = bar.close_price
-
-    def calculate_portfolio_value(self) -> float:
-        """按现金和当前持仓市值计算组合权益"""
-        position_value: float = 0
-
-        for vt_symbol, pos in self.pos_data.items():
-            price: float = self.last_prices.get(vt_symbol, 0)
-            if not pos or price <= 0:
-                continue
-
-            position_value += pos * price
-
-        return self.cash + position_value
 
     def select_target_symbols(self, selected_symbols: list[str]) -> list[str]:
         """选择最终持仓标的，不足两个时用防守ETF补齐"""
